@@ -1,0 +1,8 @@
+# ===================================================================
+# Micronaut Distributed Configuration bootstrap
+# ===================================================================
+micronaut:
+  application:
+    name: space
+  config-client:
+    enabled: true
