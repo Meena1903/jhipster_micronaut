@@ -1,0 +1,79 @@
+package org.jhipster.space.security;
+
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.uri.UriTemplate;
+import io.micronaut.security.authentication.Authentication;
+import io.micronaut.security.oauth2.client.OpenIdProviderMetadata;
+import io.micronaut.security.oauth2.configuration.OauthClientConfiguration;
+import io.micronaut.security.oauth2.endpoint.endsession.request.AbstractEndSessionRequest;
+import io.micronaut.security.oauth2.endpoint.endsession.response.EndSessionCallbackUrlBuilder;
+import io.micronaut.security.oauth2.endpoint.token.response.OpenIdAuthenticationMapper;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Named("oidc")
+public class JHipsterEndSessionEndpoint extends AbstractEndSessionRequest {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JHipsterEndSessionEndpoint.class);
+
+    private static final String PARAM_REDIRECT_URI = "redirect_uri";
+    private static final String PARAM_ID_TOKEN_HINT = "id_token_hint";
+    private static final String PARAM_POST_LOGOUT_REDIRECT_URI = "post_logout_redirect_uri";
+    private static final String PARAMETERS_KEY = "parameters";
+
+    public JHipsterEndSessionEndpoint(
+        EndSessionCallbackUrlBuilder endSessionCallbackUrlBuilder,
+        OauthClientConfiguration clientConfiguration,
+        @Named("oidc") Provider<OpenIdProviderMetadata> metadataProvider
+    ) {
+        super(endSessionCallbackUrlBuilder, clientConfiguration, metadataProvider::get);
+    }
+
+    @Nullable
+    @Override
+    public String getUrl(HttpRequest<?> originating, Authentication authentication) {
+        return getTemplate().expand(getParameters(originating, authentication));
+    }
+
+    @Override
+    protected String getUrl() {
+        return providerMetadataSupplier.get().getEndSessionEndpoint();
+    }
+
+    @Override
+    protected Map<String, Object> getArguments(HttpRequest<?> originating, Authentication authentication) {
+        Map<String, Object> arguments = new HashMap<>();
+        // if Keycloak, logoutUrl has protocol/openid-connect in it
+        if (getRedirectUri(originating).contains("/protocol")) {
+            arguments.put(PARAM_REDIRECT_URI, getRedirectUri(originating));
+        } else {
+            Optional<String> idToken = parseIdToken(authentication);
+            arguments.put(PARAM_POST_LOGOUT_REDIRECT_URI, getRedirectUri(originating));
+            idToken.ifPresent(token -> arguments.put(PARAM_ID_TOKEN_HINT, token));
+        }
+        return arguments;
+    }
+
+    private Map<String, Object> getParameters(HttpRequest<?> originating, Authentication authentication) {
+        return Collections.singletonMap(PARAMETERS_KEY, getArguments(originating, authentication));
+    }
+
+    private UriTemplate getTemplate() {
+        return UriTemplate.of(getUrl()).nest("{?" + PARAMETERS_KEY + "*}");
+    }
+
+    private Optional<String> parseIdToken(Authentication authentication) {
+        Map<String, Object> attributes = authentication.getAttributes();
+        if (attributes.containsKey(OpenIdAuthenticationMapper.OPENID_TOKEN_KEY)) {
+            return Optional.of(attributes.get(OpenIdAuthenticationMapper.OPENID_TOKEN_KEY).toString());
+        }
+        return Optional.empty();
+    }
+}
